@@ -1,0 +1,4 @@
+id;nomeSabor;tipo;precoUnitario;quantideEstoque
+1;Chocolate;Massa;12.5;50
+2;Morango;Picolé;5.0;100
+3;Baunilha;Massa;10.0;30
