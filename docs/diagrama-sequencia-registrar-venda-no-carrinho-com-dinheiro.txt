@@ -1,0 +1,25 @@
+sequenceDiagram
+    autonumber
+    actor Atendente as :Atendente
+    participant Catalogo as :CatalogoProdutos
+    participant Carrinho as :Carrinho
+    participant Venda as :Venda
+
+    Atendente->>Catalogo: consultar produtos disponíveis
+    Catalogo-->>Atendente: lista de produtos exibida
+
+    loop Adição de Itens (Passos 3 a 6)
+        Atendente->>Carrinho: adicionarItem(código, quantidade)
+        Carrinho->>Catalogo: verificarEstoque(código, quantidade)
+        Catalogo-->>Carrinho: estoqueDisponivel [RN01]
+        Carrinho->>Carrinho: calcularSubtotal()
+        Carrinho-->>Atendente: itemAdicionado (subtotal atualizado)
+    end
+
+    Atendente->>Venda: solicitarFinalizacao(formaPagamento = DINHEIRO, valorPago = 50.00)
+    Venda->>Venda: validarValorPago(valorTotal, valorPago) [RN04]
+    Venda->>Venda: calcularTroco(valorTotal, valorPago) [RN05]
+
+    Venda->>Catalogo: darBaixaEstoque(itensVendidos) [RN03]
+    Venda->>Venda: atualizarStatus(CONCLUIDO)
+    Venda-->>Atendente: exibirResumoVenda(troco = 30.00)
