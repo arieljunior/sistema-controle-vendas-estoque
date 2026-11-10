@@ -1,0 +1,23 @@
+{
+  "runtimeTarget": {
+    "name": ".NETCoreApp,Version=v10.0",
+    "signature": ""
+  },
+  "compilationOptions": {},
+  "targets": {
+    ".NETCoreApp,Version=v10.0": {
+      "app-controle-vendas-csharp/1.0.0": {
+        "runtime": {
+          "app-controle-vendas-csharp.dll": {}
+        }
+      }
+    }
+  },
+  "libraries": {
+    "app-controle-vendas-csharp/1.0.0": {
+      "type": "project",
+      "serviceable": false,
+      "sha512": ""
+    }
+  }
+}
