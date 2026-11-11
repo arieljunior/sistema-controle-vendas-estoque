@@ -1,13 +1,18 @@
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.AspNetCore.Mvc.RazorPages;
+using Scve.Services;
 
-namespace app_controle_vendas_csharp.Pages
+namespace Scve.Pages;
+
+public class IndexModel(CartService cartService) : PageModel
 {
-    public class IndexModel : PageModel
+    public void OnGet()
     {
-        public void OnGet()
-        {
+    }
 
-        }
+    public async Task<IActionResult> OnPostStartSaleAsync()
+    {
+        await cartService.ClearAsync();
+        return RedirectToPage("/Sales/Index");
     }
 }

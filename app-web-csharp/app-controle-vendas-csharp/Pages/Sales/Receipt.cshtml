@@ -1,0 +1,45 @@
+@page "{id:guid}"
+@model ReceiptModel
+@{
+    ViewData["Title"] = "Recibo";
+    var r = Model.Receipt;
+}
+
+<section class="card">
+    <h1>Venda concluída</h1>
+    <p class="muted">
+        @r.DateTime.ToString("dd/MM/yyyy HH:mm:ss") · @r.PaymentLabel · @r.StatusLabel
+    </p>
+
+    <table class="table">
+        <thead>
+            <tr>
+                <th>Produto</th>
+                <th class="num">Qtd.</th>
+                <th class="num">Unitário</th>
+                <th class="num">Subtotal</th>
+            </tr>
+        </thead>
+        <tbody>
+            @foreach (var line in r.Lines)
+            {
+                <tr>
+                    <td>@line.Name</td>
+                    <td class="num">@line.Quantity</td>
+                    <td class="num">@BrazilianMoney.Format(line.UnitPrice)</td>
+                    <td class="num">@BrazilianMoney.Format(line.Subtotal)</td>
+                </tr>
+            }
+        </tbody>
+    </table>
+
+    <p class="total">Total: @BrazilianMoney.Format(r.Total)</p>
+    <p>Valor pago: @BrazilianMoney.Format(r.AmountPaid)</p>
+    @if (r.Change is not null)
+    {
+        <p>Troco: <strong>@BrazilianMoney.Format(r.Change.Value)</strong></p>
+    }
+    <p class="muted">Código da venda: @r.Id</p>
+
+    <a class="btn btn-primary" asp-page="/Index">Nova venda</a>
+</section>

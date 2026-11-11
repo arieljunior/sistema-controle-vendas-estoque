@@ -4,7 +4,11 @@
     <TargetFramework>net10.0</TargetFramework>
     <Nullable>enable</Nullable>
     <ImplicitUsings>enable</ImplicitUsings>
-    <RootNamespace>app_controle_vendas_csharp</RootNamespace>
+    <RootNamespace>Scve</RootNamespace>
   </PropertyGroup>
+
+  <ItemGroup>
+    <None Update="Data\produtos.csv" CopyToPublishDirectory="PreserveNewest" />
+  </ItemGroup>
 
 </Project>

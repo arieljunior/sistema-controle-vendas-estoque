@@ -1,0 +1,49 @@
+@page
+@model CheckoutModel
+@{
+    ViewData["Title"] = "Pagamento";
+}
+
+<h1>Pagamento</h1>
+
+<section class="card">
+    <h2>Resumo</h2>
+    <table class="table">
+        <tbody>
+            @foreach (var line in Model.Cart.Lines)
+            {
+                <tr>
+                    <td>@line.Name</td>
+                    <td class="num">@line.Quantity × @BrazilianMoney.Format(line.UnitPrice)</td>
+                    <td class="num">@BrazilianMoney.Format(line.Subtotal)</td>
+                </tr>
+            }
+        </tbody>
+    </table>
+    <p class="total">Total: @BrazilianMoney.Format(Model.Cart.Total)</p>
+</section>
+
+<section class="card">
+    <form method="post">
+        <fieldset class="field" style="border:0;padding:0;margin:0 0 1rem">
+            <legend>Forma de pagamento</legend>
+            <label class="choice">
+                <input type="radio" name="Input.Method" value="Cash" checked="@(Model.Input.Method == PaymentMethod.Cash)" /> Dinheiro
+            </label>
+            <label class="choice">
+                <input type="radio" name="Input.Method" value="Pix" checked="@(Model.Input.Method == PaymentMethod.Pix)" /> Pix
+            </label>
+        </fieldset>
+
+        <div class="field" data-cash-only>
+            <label asp-for="Input.AmountPaid">Valor pago pelo cliente</label>
+            <input asp-for="Input.AmountPaid" type="text" inputmode="decimal" placeholder="0,00" autocomplete="off" />
+        </div>
+
+        <div class="row">
+            <button type="submit" class="btn btn-primary">Confirmar pagamento</button>
+            <a class="btn" asp-page="Index">Voltar ao carrinho</a>
+            <a class="btn btn-danger" asp-page="Cancel" asp-route-returnPage="Checkout">Cancelar venda</a>
+        </div>
+    </form>
+</section>

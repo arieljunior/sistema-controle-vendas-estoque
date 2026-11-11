@@ -1,0 +1,14 @@
+@page
+@model CancelModel
+@{
+    ViewData["Title"] = "Cancelar venda";
+}
+
+<section class="card">
+    <h1>Cancelar venda</h1>
+    <p>Deseja realmente cancelar a venda? Os itens do carrinho serão descartados e o estoque não será alterado.</p>
+    <form method="post" class="row">
+        <button type="submit" class="btn btn-danger">Sim, cancelar</button>
+        <a class="btn" asp-page="@Model.BackPage">Não, voltar</a>
+    </form>
+</section>

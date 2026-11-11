@@ -1,0 +1,12 @@
+@if (TempData["Success"] is string success)
+{
+    <div class="alert alert-success">@success</div>
+}
+@if (TempData["Error"] is string tempError)
+{
+    <div class="alert alert-error">@tempError</div>
+}
+@foreach (var error in ViewData.ModelState.Values.SelectMany(v => v.Errors))
+{
+    <div class="alert alert-error">@error.ErrorMessage</div>
+}

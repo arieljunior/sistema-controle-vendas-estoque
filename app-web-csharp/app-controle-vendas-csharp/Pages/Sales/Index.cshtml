@@ -1,0 +1,83 @@
+@page
+@model Scve.Pages.Sales.IndexModel
+@{
+    ViewData["Title"] = "Realizar Venda";
+}
+
+<h1>Realizar Venda</h1>
+
+<section class="card">
+    <h2>Produtos</h2>
+    <table class="table">
+        <thead>
+            <tr>
+                <th>Sabor</th>
+                <th>Tipo</th>
+                <th class="num">Preço</th>
+                <th class="num">Estoque</th>
+                <th>Quantidade</th>
+            </tr>
+        </thead>
+        <tbody>
+            @foreach (var p in Model.Products)
+            {
+                <tr>
+                    <td>
+                        @p.Name
+                        @if (p.IsLowStock)
+                        {
+                            <span class="badge badge-warning">ESTOQUE BAIXO</span>
+                        }
+                    </td>
+                    <td>@p.TypeLabel</td>
+                    <td class="num">@BrazilianMoney.Format(p.UnitPrice)</td>
+                    <td class="num">@p.Stock</td>
+                    <td>
+                        <form method="post" asp-page-handler="AddItem" class="row">
+                            <input type="hidden" name="Input.ProductId" value="@p.Id" />
+                            <input type="number" name="Input.Quantity" value="1" min="1" aria-label="Quantidade de @p.Name" />
+                            <button type="submit" class="btn">Adicionar</button>
+                        </form>
+                    </td>
+                </tr>
+            }
+        </tbody>
+    </table>
+</section>
+
+<section class="card">
+    <h2>Carrinho</h2>
+    @if (Model.Cart.IsEmpty)
+    {
+        <p class="muted">Carrinho vazio.</p>
+    }
+    else
+    {
+        <table class="table">
+            <thead>
+                <tr>
+                    <th>Produto</th>
+                    <th class="num">Qtd.</th>
+                    <th class="num">Unitário</th>
+                    <th class="num">Subtotal</th>
+                </tr>
+            </thead>
+            <tbody>
+                @foreach (var line in Model.Cart.Lines)
+                {
+                    <tr>
+                        <td>@line.Name</td>
+                        <td class="num">@line.Quantity</td>
+                        <td class="num">@BrazilianMoney.Format(line.UnitPrice)</td>
+                        <td class="num">@BrazilianMoney.Format(line.Subtotal)</td>
+                    </tr>
+                }
+            </tbody>
+        </table>
+        <p class="total">Total: @BrazilianMoney.Format(Model.Cart.Total)</p>
+        <div class="row">
+            <a class="btn btn-primary" asp-page="Checkout">Finalizar</a>
+            <a class="btn btn-danger" asp-page="Cancel" asp-route-returnPage="Sales">Cancelar venda</a>
+        </div>
+    }
+</section>
