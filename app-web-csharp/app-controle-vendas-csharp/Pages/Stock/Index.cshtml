@@ -1,0 +1,67 @@
+@page
+@model Scve.Pages.Stock.IndexModel
+@using Scve.Services
+@{
+    ViewData["Title"] = "Consultar Estoque";
+}
+
+<h1>Consultar Estoque</h1>
+
+<section class="card">
+    <form method="get" class="row">
+        <input type="text" name="Search" value="@Model.Search" placeholder="Buscar por código ou sabor" aria-label="Buscar produto" />
+        <button type="submit" class="btn">Buscar</button>
+        @if (!string.IsNullOrWhiteSpace(Model.Search))
+        {
+            <a class="btn btn-secondary" asp-page="Index">Limpar</a>
+        }
+    </form>
+</section>
+
+<section class="card">
+    @if (Model.Products.Count == 0)
+    {
+        @if (string.IsNullOrWhiteSpace(Model.Search))
+        {
+            <p class="muted">Nenhum produto cadastrado no estoque.</p>
+        }
+        else
+        {
+            <p class="muted">Nenhum produto encontrado para "@Model.Search".</p>
+        }
+    }
+    else
+    {
+        <table class="table">
+            <thead>
+                <tr>
+                    <th>Código</th>
+                    <th>Sabor</th>
+                    <th>Tipo</th>
+                    <th class="num">Preço</th>
+                    <th class="num">Quantidade Atual</th>
+                </tr>
+            </thead>
+            <tbody>
+                @foreach (var p in Model.Products)
+                {
+                    <tr>
+                        <td>@p.Id.ToString()[..8].ToUpperInvariant()</td>
+                        <td>
+                            @p.Name
+                            @if (p.IsLowStock)
+                            {
+                                <span class="badge badge-warning">ESTOQUE BAIXO</span>
+                            }
+                        </td>
+                        <td>@p.TypeLabel</td>
+                        <td class="num">@BrazilianMoney.Format(p.UnitPrice)</td>
+                        <td class="num">@p.Stock</td>
+                    </tr>
+                }
+            </tbody>
+        </table>
+    }
+</section>
+
+<a class="btn btn-secondary" asp-page="/Index">Voltar ao menu</a>
