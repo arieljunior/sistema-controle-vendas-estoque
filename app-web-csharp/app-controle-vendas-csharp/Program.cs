@@ -1,6 +1,7 @@
 using System.Globalization;
 using Microsoft.AspNetCore.Localization;
 using Scve.Domain.Interfaces;
+using Scve.Infrastructure.Persistence;
 using Scve.Infrastructure.Repositories;
 using Scve.Infrastructure.Session;
 using Scve.Services;
@@ -17,9 +18,9 @@ builder.Services.AddSession(o =>
 builder.Services.AddHttpContextAccessor();
 builder.Services.AddSingleton(TimeProvider.System);
 
-// Infrastructure (Singleton: mantém os dados em memória)
-builder.Services.AddSingleton<IProductRepository, CsvProductRepository>();
-builder.Services.AddSingleton<ISaleRepository, InMemorySaleRepository>();
+builder.Services.AddPersistence(builder.Configuration, builder.Environment);
+builder.Services.AddScoped<IProductRepository, EfProductRepository>();
+builder.Services.AddScoped<ISaleRepository, EfSaleRepository>();
 builder.Services.AddScoped<ICartStore, SessionCartStore>();
 
 // Services
@@ -29,6 +30,8 @@ builder.Services.AddScoped<PaymentService>();
 builder.Services.AddScoped<SaleService>();
 
 var app = builder.Build();
+
+await app.InitializeDatabaseAsync();
 
 if (!app.Environment.IsDevelopment())
 {

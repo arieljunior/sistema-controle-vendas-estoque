@@ -8,7 +8,7 @@ Este guia é **independente de feature**: vale para qualquer funcionalidade. Req
 O código deve ser limpo, fortemente tipado, de manutenção simples e sem sobre-engenharia (*overengineering*): só crie abstração quando houver necessidade real hoje.
 
 ### Escopo da fase atual
-- **Sem banco de dados**: os dados vêm de arquivos CSV e de memória, sempre atrás de interfaces de repositório.
+- **Banco SQLite via EF Core**: produtos, vendas e itens de venda são persistidos em SQLite, sempre atrás de interfaces de repositório. O carrinho continua na sessão.
 - **Sem testes automatizados**: a validação é manual, conforme o plano da feature.
 - Integrações externas (ex.: gateways de pagamento) são **mockadas**.
 
@@ -18,7 +18,7 @@ O código deve ser limpo, fortemente tipado, de manutenção simples e sem sobre
 - **Async**: todo método com I/O termina em `Async` e retorna `Task`, mesmo com arquivo/memória (trocar por banco depois não altera services nem Pages). `CancellationToken` é opcional.
 - **Identificadores e tempo**: `Guid` para ids; `TimeProvider` injetado quando a regra depender da data/hora (nunca `DateTime.Now` direto).
 - **Dinheiro**: `decimal` com 2 casas e `MidpointRounding.AwayFromZero`; nunca `double`/`float`.
-- **Cultura**: interface em `pt-BR` (`RequestLocalization`); arquivos de dados (CSV) sempre com `CultureInfo.InvariantCulture` (ponto decimal).
+- **Cultura**: interface em `pt-BR` (`RequestLocalization`); arquivos de dados/importação/exportação (ex.: CSV) sempre com `CultureInfo.InvariantCulture` (ponto decimal).
 
 ---
 
@@ -34,17 +34,18 @@ app-controle-vendas-csharp/
 │   ├── Exceptions/             # BusinessException
 │   └── Interfaces/             # Contratos de repositório e de estado de fluxo
 ├── Infrastructure/
-│   ├── Repositories/           # Implementações (CSV, memória)
+│   ├── Persistence/            # DbContext, mapeamentos (Fluent API), Migrations e inicialização do banco
+│   ├── Repositories/           # Implementações dos repositórios com EF Core
 │   └── Session/                # Adaptadores que dependem de HttpContext
 ├── Services/                   # Regras de negócio e casos de uso
 │   └── Models/                 # Records de entrada/saída consumidos pelas Pages
 ├── Pages/                      # UI (.cshtml e .cshtml.cs), agrupada por feature
 │   ├── Shared/
 │   └── <Feature>/
-├── Data/                       # Arquivos de dados (ex.: CSV)
+├── Data/                       # Arquivo do banco SQLite (scve.db, criado na execução; fora do Git)
 ├── wwwroot/css/site.css        # Único CSS da aplicação (tema escuro)
 ├── Program.cs                  # Composition root: configuração e Injeção de Dependências
-└── appsettings.json            # Opções (ex.: caminho dos arquivos de dados)
+└── appsettings.json            # Opções (ex.: connection string do SQLite)
 ```
 
 ### Regras de Dependência entre Camadas:
@@ -61,8 +62,8 @@ Pages ──▶ Services ──▶ Domain ◀── Infrastructure
 ### Princípios de simplicidade (MVP escalável):
 - Projeto único; as fronteiras são garantidas por pastas/namespaces e pelas regras acima.
 - Interface **somente** em fronteira de I/O (repositório, sessão) ou quando já existirem duas implementações. Services são classes concretas injetadas diretamente.
-- Sem MediatR, AutoMapper, CQRS, *generic repository*, Unit of Work, Strategy/Factory "por precaução" ou ORM nesta fase. Prefira `switch`/`if` simples a hierarquias de classes.
-- Escalar = trocar a implementação de um repositório (CSV → banco) em `Infrastructure/` e no `Program.cs`, sem tocar em Services ou Pages.
+- Sem MediatR, AutoMapper, CQRS, *generic repository*, Unit of Work, Strategy/Factory "por precaução". O único ORM é o EF Core; o `DbContext` não vaza para fora de `Infrastructure/`. Prefira `switch`/`if` simples a hierarquias de classes.
+- Escalar = evoluir o modelo (nova migration) ou trocar o provider (SQLite → SQL Server/PostgreSQL) em `Infrastructure/Persistence` e no `Program.cs`, sem tocar em Services ou Pages.
 
 ---
 
@@ -73,7 +74,7 @@ Ao gerar ou modificar arquivos do projeto, siga rigorosamente as convenções ab
 ### A. Entidades do Domínio (`Domain/Entities/`)
 - C# 12+ / .NET 10 com *nullable reference types* ativos.
 - **Modelo rico**: sem setters públicos; o estado só muda por métodos que protegem as invariâncias.
-- Invariâncias validadas no construtor. Violação de regra de negócio lança `BusinessException` (mensagem pt-BR pronta para o usuário); dado inválido de origem (ex.: linha de CSV) lança `ArgumentException`.
+- Invariâncias validadas no construtor. Violação de regra de negócio lança `BusinessException` (mensagem pt-BR pronta para o usuário); dado inválido de origem (ex.: registro vindo do banco) lança `ArgumentException`.
 - Domain não conhece formato de arquivo, sessão ou HTTP.
 
 ```csharp
@@ -119,16 +120,21 @@ public interface IItemRepository
 {
     Task<IReadOnlyList<Item>> ListAsync();
     Task<Item?> GetByIdAsync(Guid id);
-    Task SaveAllAsync();
 }
 ```
 
 ### C. Camada de Persistência (`Infrastructure/Repositories/`)
-- **Repositório em arquivo (CSV)**: registrado como **Singleton**; carrega o arquivo uma vez, mantém os dados em memória e serializa a escrita com `SemaphoreSlim`. Grava de forma atômica (arquivo temporário + `File.Move(overwrite: true)`) para não corromper o CSV.
-- Formato do CSV: UTF-8, separador `;`, `CultureInfo.InvariantCulture`, cabeçalho preservado na gravação, colunas lidas por posição, linhas vazias ignoradas. Linha inválida → `InvalidDataException` com o número da linha.
-- O caminho do arquivo vem do `appsettings.json` (ex.: `Data:ItemsCsvPath`), resolvido a partir de `ContentRootPath`.
-- **Repositório em memória** (registros que não precisam persistir): Singleton com lista protegida por `lock`.
-- Falha ao gravar: o Service restaura o estado em memória e propaga o erro (nada fica pela metade).
+- **ORM**: EF Core com provider SQLite (`Microsoft.EntityFrameworkCore.Sqlite`). O `ScveDbContext` e o mapeamento ficam em `Infrastructure/Persistence/`.
+- **Mapeamento por Fluent API** (`IEntityTypeConfiguration<T>` em `EntityConfigurations.cs`), seguindo o Dicionário de Dados da spec (tabelas `Produto`, `Venda`, `ItemVenda`; colunas em camelCase; enums como texto; `CHECK` de preço, estoque e quantidade). As entidades do Domain não recebem atributos nem referências do EF; para materializar, usam construtor/setters privados e backing fields.
+- **Repositórios** (`Ef*Repository`) são **Scoped** (o `DbContext` vive por requisição). Leituras de listagem usam `AsNoTracking`; entidades que serão alteradas são carregadas com rastreamento.
+- **Transação**: `SaveChangesAsync` é atômico. Alterações de estoque feitas nas entidades rastreadas são gravadas na mesma chamada que persiste a venda (`ISaleRepository.AddAsync`), garantindo a RN03 (ACID). Se a gravação falhar, nada é persistido e o erro sobe ao handler global.
+- **Banco e migrations**: a connection string vem de `ConnectionStrings:Default` (caminho relativo a `ContentRootPath`). Migrations ficam em `Infrastructure/Persistence/Migrations` e são aplicadas na inicialização (`InitializeDatabaseAsync`). Dados de exemplo são inseridos apenas se `Database:SeedSampleData` for `true` e a tabela `Produto` estiver vazia. Alterou uma entidade ou mapeamento? Gere uma migration:
+  ```powershell
+  dotnet tool restore
+  dotnet tool run dotnet-ef migrations add <Nome> --project app-controle-vendas-csharp --output-dir Infrastructure/Persistence/Migrations
+  ```
+- Valores `decimal` são mapeados como `decimal(10,2)`; o SQLite não suporta agregação de `decimal` no SQL, então somatórios (ex.: relatórios) são feitos em memória após a consulta.
+- O que depende de `HttpContext` (sessão) fica em `Infrastructure/Session/`, atrás de interface do Domain.
 - Premissa do MVP: um único usuário; operações que alteram dados compartilhados são serializadas no Service (`SemaphoreSlim`).
 - O que depende de `HttpContext` (sessão) fica em `Infrastructure/Session/`, atrás de interface do Domain.
 
@@ -175,7 +181,7 @@ public interface IItemRepository
 
 ## 4. Configuração da Injeção de Dependência (`Program.cs`)
 
-Sempre registre as novas dependências no `Program.cs`: repositórios em arquivo/memória como **Singleton** (guardam o estado); services e adaptadores de sessão como **Scoped**.
+Sempre registre as novas dependências no `Program.cs`: repositórios e o `DbContext` como **Scoped** (um por requisição); services e adaptadores de sessão também como **Scoped**.
 
 ```csharp
 builder.Services.AddRazorPages();
@@ -183,11 +189,15 @@ builder.Services.AddDistributedMemoryCache();
 builder.Services.AddSession(o => { o.Cookie.HttpOnly = true; o.Cookie.IsEssential = true; });
 builder.Services.AddHttpContextAccessor();
 
-// Infrastructure (Singleton: mantém dados em memória)
-builder.Services.AddSingleton<IItemRepository, CsvItemRepository>();
+// Infrastructure (Scoped: o DbContext vive por requisição)
+builder.Services.AddPersistence(builder.Configuration, builder.Environment);
+builder.Services.AddScoped<IItemRepository, EfItemRepository>();
 
 // Services (Scoped)
 builder.Services.AddScoped<ItemService>();
+
+var app = builder.Build();
+await app.InitializeDatabaseAsync(); // aplica migrations e, se habilitado, carrega dados de exemplo
 
 // Pipeline: UseRequestLocalization("pt-BR") -> UseRouting -> UseSession -> UseAuthorization
 ```
@@ -203,7 +213,7 @@ Sem testes automatizados nesta fase: valide cada feature executando os cenários
 Quando solicitado a criar um novo recurso/módulo completo (Exemplo: "Crie a funcionalidade de Tarefas"), gere os arquivos individualmente na ordem da camada mais baixa até a UI:
 1. **Enums, Exceptions e Entidades** (`Domain/`)
 2. **Interfaces** (`Domain/Interfaces/`)
-3. **Repositórios** (`Infrastructure/Repositories/`) e dados em `Data/`
+3. **Mapeamento/migration** (`Infrastructure/Persistence/`) e **Repositórios** (`Infrastructure/Repositories/`)
 4. **Models e Serviços** (`Services/`)
 5. **PageModel e Razor View** (`Pages/<Feature>/...`) e ajustes em `site.css`
 6. **Registros no `Program.cs`**
@@ -211,7 +221,7 @@ Quando solicitado a criar um novo recurso/módulo completo (Exemplo: "Crie a fun
 ### Checklist antes de concluir
 - [ ] Nenhuma Page acessa Repository; nenhum Service usa `HttpContext`.
 - [ ] Entidades sem setters públicos; invariâncias no construtor.
-- [ ] `decimal` para dinheiro; CSV com `InvariantCulture`; entrada do usuário por `BrazilianMoney`.
+- [ ] `decimal` para dinheiro; entrada do usuário por `BrazilianMoney`; nova entidade/coluna acompanhada de migration.
 - [ ] Mensagens ao usuário em pt-BR; código em inglês.
 - [ ] `POST` bem-sucedido termina em `RedirectToPage` (PRG).
 - [ ] Sem abstrações sem uso (interfaces "por precaução", genéricos, mediators, mappers).

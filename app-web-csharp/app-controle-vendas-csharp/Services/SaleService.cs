@@ -13,7 +13,6 @@ public class SaleService(
     PaymentService payments,
     TimeProvider time)
 {
-    // Premissa do MVP: um único usuário; serializa a baixa de estoque.
     private static readonly SemaphoreSlim Gate = new(1, 1);
 
     public async Task<Guid> CheckoutAsync(PaymentMethod method, decimal? amountPaid)
@@ -30,7 +29,8 @@ public class SaleService(
             var sale = Sale.FromCart(cart, method, time.GetLocalNow().DateTime);
             var payment = payments.Process(method, sale.TotalAmount, amountPaid);
 
-            await ApplyStockDeductionAsync(cart);
+            foreach (var item in cart.Items)
+                item.Product.DecreaseStock(item.Quantity);
 
             sale.Complete(payment.AmountPaid, payment.Change);
             await sales.AddAsync(sale);
@@ -64,23 +64,6 @@ public class SaleService(
                 ?? throw new BusinessException("Produto não encontrado. Verifique o código digitado.");
             if (!current.HasStockFor(item.Quantity))
                 throw new BusinessException(current.InsufficientStockMessage());
-        }
-    }
-
-    private async Task ApplyStockDeductionAsync(Cart cart)
-    {
-        foreach (var item in cart.Items)
-            item.Product.DecreaseStock(item.Quantity);
-
-        try
-        {
-            await products.SaveAllAsync();
-        }
-        catch
-        {
-            foreach (var item in cart.Items)
-                item.Product.IncreaseStock(item.Quantity);
-            throw;
         }
     }
 }
