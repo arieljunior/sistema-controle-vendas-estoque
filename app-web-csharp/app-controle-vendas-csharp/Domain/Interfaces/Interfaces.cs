@@ -8,7 +8,6 @@ public interface IProductRepository
 {
     Task<IReadOnlyList<Product>> ListAsync();
     Task<Product?> GetByIdAsync(Guid id);
-    Task SaveAllAsync();
 }
 
 public interface ISaleRepository

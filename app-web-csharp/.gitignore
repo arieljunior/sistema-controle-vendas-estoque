@@ -1,0 +1,4 @@
+# Banco SQLite local
+*.db
+*.db-shm
+*.db-wal

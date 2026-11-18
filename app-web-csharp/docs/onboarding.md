@@ -6,15 +6,16 @@ Este documento descreve a arquitetura da aplicação web do Sistema de Controle 
 
 O projeto é uma aplicação web ASP.NET Core com Razor Pages. O usuário consulta produtos e estoque, monta um carrinho, informa uma forma de pagamento e recebe um recibo.
 
-Este é um MVP, sem banco de dados:
+Este é um MVP de estudo, com persistência em **SQLite** acessado por **Entity Framework Core**:
 
-- Os produtos são carregados de [`Data/produtos.csv`](../app-controle-vendas-csharp/Data/produtos.csv). O repositório mantém os produtos em memória enquanto a aplicação está rodando e grava o CSV quando o estoque muda.
+- Produtos, vendas e itens de venda ficam no banco `Data/scve.db`, criado automaticamente na primeira execução (migrations aplicadas na inicialização). O arquivo não é versionado.
+- Na primeira execução, se a tabela `Produto` estiver vazia, três produtos de exemplo são inseridos (`Database:SeedSampleData` em `appsettings.json`).
 - O carrinho é guardado na sessão HTTP, usando armazenamento em memória do servidor.
-- As vendas concluídas são guardadas somente em memória. Elas desaparecem quando o processo da aplicação é reiniciado.
+- Vendas e estoque sobrevivem ao reinício da aplicação. A venda e a baixa de estoque são gravadas na mesma transação.
 - Dinheiro é validado localmente; o Pix é simulado e aprovado automaticamente. Não há integração com banco ou gateway de pagamento.
 - Não há projeto de testes automatizados nesta fase; consulte os cenários manuais mais adiante.
 
-> **Cuidado ao testar:** uma venda concluída altera `Data/produtos.csv`. Faça uma cópia do arquivo antes de testar se quiser preservar o estoque original.
+> **Cuidado ao testar:** uma venda concluída altera o estoque no banco. Para voltar aos dados iniciais, pare a aplicação e apague os arquivos `Data/scve.db*`; eles serão recriados na próxima execução.
 
 ## 2. Executar localmente
 
@@ -28,7 +29,20 @@ dotnet build .\app-controle-vendas-csharp\app-controle-vendas-csharp.csproj
 dotnet run --project .\app-controle-vendas-csharp\app-controle-vendas-csharp.csproj --launch-profile http
 ```
 
-Abra <http://localhost:5247>. O perfil `http` é definido em [`launchSettings.json`](../app-controle-vendas-csharp/Properties/launchSettings.json). A aplicação usa `Data:ProductsCsvPath` em [`appsettings.json`](../app-controle-vendas-csharp/appsettings.json) para localizar o CSV, relativo à pasta do projeto.
+Abra <http://localhost:5247>. O perfil `http` é definido em [`launchSettings.json`](../app-controle-vendas-csharp/Properties/launchSettings.json). A aplicação usa `ConnectionStrings:Default` em [`appsettings.json`](../app-controle-vendas-csharp/appsettings.json) para localizar o arquivo SQLite, relativo à pasta do projeto.
+
+Para criar uma nova migration após alterar uma entidade ou mapeamento (a ferramenta `dotnet-ef` está em [`dotnet-tools.json`](../dotnet-tools.json)):
+
+```powershell
+dotnet tool restore
+dotnet tool run dotnet-ef migrations add NomeDaMigration --project .\app-controle-vendas-csharp --output-dir Infrastructure/Persistence/Migrations
+```
+
+As migrations são aplicadas automaticamente ao iniciar a aplicação.
+
+### Modelo de dados
+
+O esquema segue o Dicionário de Dados da [spec](../../docs/spec.md): `Produto`, `Venda` e `ItemVenda` (`ItemVenda.vendaId` → `Venda`, `ItemVenda.produtoId` → `Produto`). Enums são gravados como texto (`PICOLE`/`MASSA`, `DINHEIRO`/`PIX`, `PENDENTE`/`CONCLUIDA`/`CANCELADA`), `nomeSabor` é único e há `CHECK` para preço, estoque e quantidade.
 
 ## 3. Mapa do projeto
 
@@ -42,12 +56,13 @@ app-controle-vendas-csharp/
 │   ├── Exceptions/     # Erros de regra de negócio
 │   └── Interfaces/     # Contratos para produtos, vendas e carrinho
 ├── Infrastructure/
-│   ├── Repositories/   # Acesso ao CSV e armazenamento de vendas em memória
+│   ├── Repositories/   # Repositórios de produtos e vendas (EF Core)
+│   ├── Persistence/    # DbContext, mapeamento das tabelas, migrations e carga inicial
 │   └── Session/        # Adaptador do carrinho para a sessão HTTP
 ├── Services/           # Casos de uso e regras que coordenam as entidades
 │   └── Models/         # Dados de saída preparados para as páginas
 ├── Pages/              # Páginas Razor: interface e handlers HTTP
-├── Data/               # CSV de produtos
+├── Data/               # Arquivo do banco SQLite (gerado na execução)
 └── Program.cs          # Inicialização e configuração das dependências
 ```
 
@@ -64,7 +79,7 @@ Program.cs registra e conecta as implementações
 - **Pages** recebem requisições e exibem a interface. Não devem implementar regras de negócio nem acessar arquivos ou repositórios diretamente.
 - **Services** coordenam um caso de uso: carregam dados, chamam regras do domínio e pedem persistência pelas interfaces.
 - **Domain** contém entidades e regras centrais, como calcular o total e impedir estoque insuficiente. Não depende de ASP.NET ou de arquivos.
-- **Infrastructure** implementa os detalhes externos: CSV, memória e sessão. Ela cumpre contratos definidos no Domain.
+- **Infrastructure** implementa os detalhes externos: banco (EF Core/SQLite) e sessão. Ela cumpre contratos definidos no Domain.
 - **Program.cs** é o ponto de composição: registra as implementações e informa ao ASP.NET Core quais classes fornecer quando outras classes precisarem delas.
 
 ### Elementos da implementação
@@ -112,7 +127,7 @@ POST Confirmar pagamento
 
 `CheckoutModel` confere se o carrinho não está vazio, se a forma de pagamento foi informada e, para dinheiro, se o valor tem formato válido. A classe `SaleService` faz uma nova consulta ao estoque porque a quantidade pode ter mudado desde que o item foi colocado no carrinho.
 
-Se o pagamento for em dinheiro, `PaymentService` exige valor suficiente e calcula o troco. Se for Pix, o serviço registra um aviso de bypass no log e considera o valor pago igual ao total. Em seguida, a venda é marcada como concluída, o estoque é salvo e a venda é adicionada ao repositório em memória. A página então redireciona para o recibo usando o `Guid` gerado para a venda.
+Se o pagamento for em dinheiro, `PaymentService` exige valor suficiente e calcula o troco. Se for Pix, o serviço registra um aviso de bypass no log e considera o valor pago igual ao total. Em seguida, a venda é marcada como concluída e o repositório grava, em uma única transação, a venda, seus itens e a baixa de estoque. A página então redireciona para o recibo usando o `Guid` gerado para a venda.
 
 Se uma regra de negócio falhar, ela lança `BusinessException`. A página de checkout captura essa exceção, apresenta a mensagem ao usuário e mantém a tela para correção. A exceção não substitui a validação do formulário: validações de entrada e regras de negócio ocorrem em pontos diferentes do fluxo.
 
@@ -120,13 +135,14 @@ O botão de cancelar limpa o carrinho e retorna ao início; ele não grava uma v
 
 ## 5. Onde ficam os dados e as configurações
 
-- [`Data/produtos.csv`](../app-controle-vendas-csharp/Data/produtos.csv): dados iniciais e persistidos dos produtos. O separador é `;`; o preço no arquivo usa ponto decimal (por exemplo, `12.50`). A tela, por outro lado, apresenta valores em `pt-BR`.
-- [`Infrastructure/Repositories/CsvProductRepository.cs`](../app-controle-vendas-csharp/Infrastructure/Repositories/CsvProductRepository.cs): lê o CSV na criação do repositório e salva a lista completa após a baixa do estoque.
-- [`Infrastructure/Repositories/InMemorySaleRepository.cs`](../app-controle-vendas-csharp/Infrastructure/Repositories/InMemorySaleRepository.cs): mantém as vendas em uma lista protegida durante a execução atual.
+- `Data/scve.db`: banco SQLite com as tabelas `Produto`, `Venda` e `ItemVenda`, criado ao iniciar a aplicação. A tela apresenta valores em `pt-BR`; no banco, valores monetários são `decimal(10,2)`.
+- [`Infrastructure/Persistence/ScveDbContext.cs`](../app-controle-vendas-csharp/Infrastructure/Persistence/ScveDbContext.cs) e [`EntityConfigurations.cs`](../app-controle-vendas-csharp/Infrastructure/Persistence/EntityConfigurations.cs): contexto do EF Core e mapeamento das entidades para as tabelas e colunas do dicionário de dados.
+- [`Infrastructure/Persistence/DatabaseInitializer.cs`](../app-controle-vendas-csharp/Infrastructure/Persistence/DatabaseInitializer.cs): aplica as migrations e insere os produtos de exemplo quando o banco está vazio.
+- [`Infrastructure/Repositories/EfProductRepository.cs`](../app-controle-vendas-csharp/Infrastructure/Repositories/EfProductRepository.cs) e [`EfSaleRepository.cs`](../app-controle-vendas-csharp/Infrastructure/Repositories/EfSaleRepository.cs): consultas e gravação. `EfSaleRepository.AddAsync` grava a venda e a baixa de estoque na mesma transação.
 - [`Infrastructure/Session/SessionCartStore.cs`](../app-controle-vendas-csharp/Infrastructure/Session/SessionCartStore.cs): serializa os itens do carrinho na sessão.
-- [`Program.cs`](../app-controle-vendas-csharp/Program.cs): registra Razor Pages, sessão, cultura `pt-BR`, repositórios e serviços. Os repositórios de produtos/vendas são `Singleton`; os serviços e o adaptador de sessão são `Scoped`.
+- [`Program.cs`](../app-controle-vendas-csharp/Program.cs): registra Razor Pages, sessão, cultura `pt-BR`, banco, repositórios e serviços. O `DbContext`, os repositórios, os serviços e o adaptador de sessão são `Scoped` (um por requisição).
 
-O `Singleton` de produtos vive durante o processo e mantém uma cópia em memória. O arquivo CSV também é atualizado para que o estoque sobreviva ao reinício. As vendas, ao contrário, não são gravadas em arquivo nem banco. O carrinho depende da sessão em memória do servidor, portanto não deve ser tratado como armazenamento permanente.
+O estoque e as vendas ficam no SQLite e sobrevivem ao reinício. O carrinho depende da sessão em memória do servidor, portanto não deve ser tratado como armazenamento permanente.
 
 ## 6. Cenários para explorar manualmente
 
@@ -137,7 +153,7 @@ Como não há testes automatizados configurados, use o navegador para observar o
 3. Finalize uma venda em dinheiro com valor exato; repita com valor maior e confira o troco.
 4. Tente pagar em dinheiro com valor menor que o total ou com formato inválido.
 5. Finalize uma venda em Pix e observe que o fluxo aprova sem integração externa.
-6. Após uma venda concluída, confira a redução do estoque na tela e no CSV. Restaure a cópia do CSV se quiser repetir os cenários com os dados iniciais.
+6. Após uma venda concluída, confira a redução do estoque na tela, reinicie a aplicação e confirme que estoque e recibo continuam disponíveis. Para voltar aos dados iniciais, pare a aplicação e apague `Data/scve.db*`.
 7. Cancele um carrinho e confira que ele é limpo sem gerar recibo.
 
 Para analisar a composição da aplicação, consulte [`Program.cs`](../app-controle-vendas-csharp/Program.cs). Para rastrear uma regra de negócio, siga o Service até a entidade do Domain correspondente. Para analisar uma página, consulte em conjunto os arquivos `.cshtml` e `.cshtml.cs`.
