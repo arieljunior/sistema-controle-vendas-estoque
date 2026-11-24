@@ -13,7 +13,6 @@ public class SaleItem
     public string FlavorName => Product.FlavorName;
     public decimal Subtotal => UnitPriceAtSale * Quantity;
 
-    // Usado pelo ORM na materialização.
     private SaleItem()
     {
     }
@@ -43,7 +42,6 @@ public class Sale
     public SaleStatus Status { get; private set; } = SaleStatus.Pending;
     public IReadOnlyList<SaleItem> Items => _items;
 
-    // Usado pelo ORM na materialização.
     private Sale()
     {
     }
